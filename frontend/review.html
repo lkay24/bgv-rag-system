@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGV — Review Queue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  (function() {
+    const saved = localStorage.getItem('bgv-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', saved);
+  })();
+</script>
+<style>
+  :root[data-theme="light"] {
+    --bg: #FAFAFA; --surface: #FFFFFF; --border: #ECECEC;
+    --muted: #6B7280; --text: #1A1A1A; --accent: #2563EB; --accent-soft: #EFF4FF;
+    --shadow: rgba(0,0,0,0.03);
+    --red-bg: #FEE2E2; --red-text: #DC2626;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0D0D0D; --surface: #161616; --border: #2A2A2A;
+    --muted: #8A8A8A; --text: #EDEDED; --accent: #C9A04D; --accent-soft: #2A2316;
+    --shadow: rgba(0,0,0,0.2);
+    --red-bg: #2E1417; --red-text: #F0506E;
+  }
+
+  /* ===== TOAST NOTIFICATION ===== */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: 0 4px 16px var(--shadow);
+    min-width: 240px;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toast-in 0.25s ease;
+  }
+
+  .toast.success { border-left-color: #16A34A; }
+  .toast.error { border-left-color: #DC2626; }
+
+  .toast-icon { font-size: 14px; flex-shrink: 0; }
+
+  .toast.toast-out {
+    animation: toast-out 0.2s ease forwards;
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(8px); }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; transition: background 0.2s ease, color 0.2s ease; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 56px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 16px; border-radius: 8px; transition: background 0.15s ease, color 0.15s ease; }
+  .nav-links a:hover { background: var(--bg); color: var(--text); }
+  .nav-links a.active { background: var(--accent-soft); color: var(--accent); }
+
+  .theme-toggle { background: none; border: 1px solid var(--border); color: var(--muted); width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: background 0.15s ease, color 0.15s ease; }
+  .theme-toggle:hover { background: var(--bg); color: var(--text); }
+
+  main { max-width: 960px; margin: 0 auto; padding: 48px 56px 120px; }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .page-subtitle { font-size: 14px; color: var(--muted); margin-bottom: 32px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px var(--shadow); }
+
+  .row { display: grid; grid-template-columns: 90px 1fr 160px; align-items: center; padding: 18px 24px; border-bottom: 1px solid var(--border); gap: 16px; }
+  .row:last-child { border-bottom: none; }
+
+  .cand-id { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+  .cand-name { font-size: 15px; font-weight: 600; }
+  .cand-email { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .retry-btn { background: var(--red-bg); color: var(--red-text); border: none; font-size: 13px; font-weight: 600; padding: 9px 16px; border-radius: 10px; cursor: pointer; font-family: inherit; transition: opacity 0.15s ease; width: fit-content; justify-self: end; }
+  .retry-btn:hover { opacity: 0.8; }
+  .retry-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .empty-state, .loading-state { padding: 56px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 640px) {
+    nav { padding: 18px 24px; }
+    main { padding: 32px 24px 80px; }
+    .row { grid-template-columns: 1fr 100px; }
+    .row .cand-id { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">BGV</div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="review.html" class="active">Review</a>
+      <a href="history.html">History</a>
+      <a href="settings.html">Settings</a>
+    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+  </div>
+</nav>
+
+<main>
+  <div class="page-title">Review queue</div>
+  <div class="page-subtitle">Candidates whose verification failed. Retry after confirming their documents manually.</div>
+
+  <div class="card" id="queueList">
+    <div class="loading-state">Loading review queue…</div>
+  </div>
+</main>
+
+<script>
+  const API_BASE = 'http://localhost:8000/api';
+
+  function updateToggleIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('bgv-theme', next);
+    updateToggleIcon();
+  }
+
+  updateToggleIcon();
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? '✓' : '!';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-out');
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
+  }
+
+  async function retry(candidateId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Retrying…';
+    try {
+      const res = await fetch(`${API_BASE}/candidates/${candidateId}/retry?admin_email=lotusbazaz@gmail.com`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`Retried ${candidateId} — status: ${data.status}`, 'success');
+        loadQueue();
+      } else {
+        showToast(data.detail || data.error || 'Retry failed', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Retry';
+      }
+    } catch (err) {
+      showToast('Could not reach the server.', 'error');
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  }
+
+  async function loadQueue() {
+    const listEl = document.getElementById('queueList');
+    try {
+      const res = await fetch(`${API_BASE}/candidates/review-queue`);
+      const data = await res.json();
+      const candidates = data.candidates || [];
+
+      if (!candidates.length) {
+        listEl.innerHTML = '<div class="empty-state">Nothing to review. All candidates are verified or partial.</div>';
+        return;
+      }
+
+      listEl.innerHTML = candidates.map(c => `
+        <div class="row">
+          <div class="cand-id mono">${c.candidate_id}</div>
+          <div>
+            <div class="cand-name">${c.name}</div>
+            <div class="cand-email">${c.email}</div>
+          </div>
+          <button class="retry-btn" onclick="retry('${c.candidate_id}', this)">Retry</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      listEl.innerHTML = '<div class="empty-state">Could not load review queue. Is the backend running?</div>';
+      console.error(err);
+    }
+  }
+
+  loadQueue();
+</script>
+<div class="toast-container" id="toastContainer"></div>
+</body>
+</html>

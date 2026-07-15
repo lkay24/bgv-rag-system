@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGV — Candidate Detail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  (function() {
+    const saved = localStorage.getItem('bgv-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', saved);
+  })();
+</script>
+<style>
+  :root[data-theme="light"] {
+    --bg: #FAFAFA; --surface: #FFFFFF; --border: #ECECEC;
+    --muted: #6B7280; --text: #1A1A1A; --accent: #2563EB; --accent-soft: #EFF4FF;
+    --shadow: rgba(0,0,0,0.03);
+    --green-bg: #DCFCE7; --green-text: #16A34A;
+    --amber-bg: #FEF3C7; --amber-text: #D97706;
+    --red-bg: #FEE2E2; --red-text: #DC2626;
+    --grey-bg: #F1F5F9; --grey-text: #64748B;
+    --btn-secondary-hover: #F0F0F0;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0D0D0D; --surface: #161616; --border: #2A2A2A;
+    --muted: #8A8A8A; --text: #EDEDED; --accent: #C9A04D; --accent-soft: #2A2316;
+    --shadow: rgba(0,0,0,0.2);
+    --green-bg: #14291C; --green-text: #4ADE80;
+    --amber-bg: #2E2310; --amber-text: #F0B429;
+    --red-bg: #2E1417; --red-text: #F0506E;
+    --grey-bg: #1C1C1C; --grey-text: #8A8A8A;
+    --btn-secondary-hover: #232323;
+  }
+
+  /* ===== TOAST NOTIFICATION ===== */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: 0 4px 16px var(--shadow);
+    min-width: 240px;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toast-in 0.25s ease;
+  }
+
+  .toast.success { border-left-color: #16A34A; }
+  .toast.error { border-left-color: #DC2626; }
+
+  .toast-icon { font-size: 14px; flex-shrink: 0; }
+
+  .toast.toast-out {
+    animation: toast-out 0.2s ease forwards;
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(8px); }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; transition: background 0.2s ease, color 0.2s ease; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 56px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 16px; border-radius: 8px; transition: background 0.15s ease, color 0.15s ease; }
+  .nav-links a:hover { background: var(--bg); color: var(--text); }
+  .nav-links a.active { background: var(--accent-soft); color: var(--accent); }
+
+  .theme-toggle { background: none; border: 1px solid var(--border); color: var(--muted); width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: background 0.15s ease, color 0.15s ease; }
+  .theme-toggle:hover { background: var(--bg); color: var(--text); }
+
+  main { max-width: 800px; margin: 0 auto; padding: 48px 56px 120px; }
+
+  .back-link { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; margin-bottom: 24px; transition: color 0.15s ease; }
+  .back-link:hover { color: var(--accent); }
+
+  .header-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px; box-shadow: 0 1px 2px var(--shadow); margin-bottom: 24px; }
+  .header-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+
+  .candidate-id-tag { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--muted); background: var(--bg); padding: 4px 10px; border-radius: 6px; width: fit-content; margin-bottom: 12px; }
+  .candidate-name { font-size: 26px; font-weight: 700; }
+  .candidate-meta { margin-top: 8px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+
+  .status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; width: fit-content; }
+  .status-pill.verified { background: var(--green-bg); color: var(--green-text); }
+  .status-pill.partial { background: var(--amber-bg); color: var(--amber-text); }
+  .status-pill.failed { background: var(--red-bg); color: var(--red-text); }
+  .status-pill.pending { background: var(--grey-bg); color: var(--grey-text); }
+
+  .actions-row { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; }
+
+  .btn { border: none; font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-family: inherit; transition: background 0.15s ease, opacity 0.15s ease; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--btn-secondary-hover); }
+
+  .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px var(--shadow); margin-bottom: 32px; }
+
+  .doc-row { display: grid; grid-template-columns: 1fr 140px 100px 90px; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border); gap: 16px; }
+  .doc-row:last-child { border-bottom: none; }
+  .doc-type { font-size: 14px; font-weight: 600; text-transform: capitalize; }
+  .doc-category { font-size: 12px; color: var(--muted); margin-top: 2px; text-transform: capitalize; }
+  .doc-confidence { font-size: 12px; color: var(--muted); text-transform: capitalize; }
+  .doc-status-pill { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px; background: var(--green-bg); color: var(--green-text); width: fit-content; text-transform: capitalize; }
+  .doc-link { font-size: 12px; color: var(--accent); text-decoration: none; font-weight: 500; }
+  .doc-link:hover { text-decoration: underline; }
+
+  .missing-row { display: flex; align-items: center; gap: 12px; padding: 14px 24px; border-bottom: 1px solid var(--border); font-size: 14px; text-transform: capitalize; }
+  .missing-row:last-child { border-bottom: none; }
+  .missing-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--red-text); flex-shrink: 0; }
+
+  .empty-state { padding: 32px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+  .loading-state { padding: 56px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  @media (max-width: 640px) {
+    nav { padding: 18px 24px; }
+    main { padding: 32px 24px 80px; }
+    .doc-row { grid-template-columns: 1fr 80px; }
+    .doc-row .doc-confidence, .doc-row .doc-link { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">BGV</div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="review.html">Review</a>
+      <a href="history.html">History</a>
+      <a href="settings.html">Settings</a>
+    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+  </div>
+</nav>
+
+<main>
+  <a href="index.html" class="back-link">← Back to overview</a>
+
+  <div id="content">
+    <div class="loading-state">Loading candidate…</div>
+  </div>
+</main>
+
+<script>
+  const API_BASE = 'http://localhost:8000/api';
+
+  function updateToggleIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('bgv-theme', next);
+    updateToggleIcon();
+  }
+
+  updateToggleIcon();
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? '✓' : '!';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-out');
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const candidateId = params.get('id');
+
+  function statusClass(status) {
+    if (status === 'completed') return 'verified';
+    if (status === 'partial') return 'partial';
+    if (status === 'failed') return 'failed';
+    return 'pending';
+  }
+
+  function statusLabel(status) {
+    if (status === 'completed') return 'Verified';
+    if (status === 'partial') return 'Partial';
+    if (status === 'failed') return 'Failed';
+    return 'Pending';
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  async function processCandidate() {
+    const btn = document.getElementById('processBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing…';
+
+    try {
+      const res = await fetch(`${API_BASE}/candidates/${candidateId}/process?admin_email=lotusbazaz@gmail.com`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadCandidate();
+      } else {
+        showToast(data.error || 'Processing failed', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Process candidate';
+      }
+    } catch (err) {
+      showToast('Could not reach the server.', 'error');
+      console.error(err);
+      btn.disabled = false;
+      btn.textContent = 'Process candidate';
+    }
+  }
+
+  async function retryCandidate() {
+    const btn = document.getElementById('retryBtn');
+    btn.disabled = true;
+    btn.textContent = 'Retrying…';
+
+    try {
+      const res = await fetch(`${API_BASE}/candidates/${candidateId}/retry?admin_email=lotusbazaz@gmail.com`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        loadCandidate();
+      } else {
+        showToast(data.detail || data.error || 'Retry failed', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Retry verification';
+      }
+    } catch (err) {
+      showToast('Could not reach the server.', 'error');
+      console.error(err);
+      btn.disabled = false;
+      btn.textContent = 'Retry verification';
+    }
+  }
+
+  async function loadCandidate() {
+    const contentEl = document.getElementById('content');
+
+    if (!candidateId) {
+      contentEl.innerHTML = '<div class="empty-state">No candidate specified.</div>';
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/candidates/${candidateId}/detail`);
+      if (!res.ok) throw new Error('Not found');
+      const c = await res.json();
+
+      const docsHtml = c.documents.length
+        ? c.documents.map(doc => `
+            <div class="doc-row">
+              <div>
+                <div class="doc-type">${doc.doc_type.replace(/_/g, ' ')}</div>
+                <div class="doc-category">${doc.category}</div>
+              </div>
+              <div class="doc-confidence">${doc.confidence} confidence</div>
+              <div class="doc-status-pill">${doc.status}</div>
+              <a class="doc-link" href="https://drive.google.com/file/d/${doc.drive_file_id}/view" target="_blank">View →</a>
+            </div>
+          `).join('')
+        : '<div class="empty-state">No documents received yet.</div>';
+
+      const missingHtml = c.missing_documents.length
+        ? c.missing_documents.map(doc => `
+            <div class="missing-row">
+              <span class="missing-dot"></span>${doc.replace(/_/g, ' ')}
+            </div>
+          `).join('')
+        : '<div class="empty-state">All required documents received.</div>';
+
+      const actionBtn = c.status === 'failed'
+        ? `<button id="retryBtn" class="btn btn-primary" onclick="retryCandidate()">Retry verification</button>`
+        : `<button id="processBtn" class="btn btn-secondary" onclick="processCandidate()">Re-check documents</button>`;
+
+      contentEl.innerHTML = `
+        <div class="header-card">
+          <div class="header-top">
+            <div>
+              <div class="candidate-id-tag mono">${c.candidate_id}</div>
+              <div class="candidate-name">${c.name}</div>
+              <div class="candidate-meta">
+                ${c.email}<br>
+                ${c.phone || 'No phone on file'} · Added ${formatDate(c.created_at)}
+              </div>
+            </div>
+            <div class="status-pill ${statusClass(c.status)}">${statusLabel(c.status)}</div>
+          </div>
+          <div class="actions-row">
+            ${actionBtn}
+          </div>
+        </div>
+
+        <div class="section-title">Documents received (${c.documents.length})</div>
+        <div class="card">${docsHtml}</div>
+
+        <div class="section-title">Missing documents (${c.missing_documents.length})</div>
+        <div class="card">${missingHtml}</div>
+      `;
+    } catch (err) {
+      contentEl.innerHTML = '<div class="empty-state">Could not load this candidate. Is the backend running?</div>';
+      console.error('Candidate load failed:', err);
+    }
+  }
+
+  loadCandidate();
+</script>
+<div class="toast-container" id="toastContainer"></div>
+</body>
+</html>

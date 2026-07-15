@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGV — Settings</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  (function() {
+    const saved = localStorage.getItem('bgv-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', saved);
+  })();
+</script>
+<style>
+  :root[data-theme="light"] {
+    --bg: #FAFAFA; --surface: #FFFFFF; --border: #ECECEC;
+    --muted: #6B7280; --text: #1A1A1A; --accent: #2563EB; --accent-soft: #EFF4FF;
+    --shadow: rgba(0,0,0,0.03);
+    --green-text: #16A34A;
+    --input-bg: #FAFAFA;
+    --btn-secondary-hover: #F0F0F0;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0D0D0D; --surface: #161616; --border: #2A2A2A;
+    --muted: #8A8A8A; --text: #EDEDED; --accent: #C9A04D; --accent-soft: #2A2316;
+    --shadow: rgba(0,0,0,0.2);
+    --green-text: #4ADE80;
+    --input-bg: #1C1C1C;
+    --btn-secondary-hover: #232323;
+  }
+
+  /* ===== TOAST NOTIFICATION ===== */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: 0 4px 16px var(--shadow);
+    min-width: 240px;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toast-in 0.25s ease;
+  }
+
+  .toast.success { border-left-color: #16A34A; }
+  .toast.error { border-left-color: #DC2626; }
+
+  .toast-icon { font-size: 14px; flex-shrink: 0; }
+
+  .toast.toast-out {
+    animation: toast-out 0.2s ease forwards;
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(8px); }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', sans-serif; -webkit-font-smoothing: antialiased; transition: background 0.2s ease, color 0.2s ease; }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  nav { display: flex; align-items: center; justify-content: space-between; padding: 24px 56px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .nav-right { display: flex; align-items: center; gap: 8px; }
+  .logo { font-size: 15px; font-weight: 700; letter-spacing: 0.02em; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 500; padding: 8px 16px; border-radius: 8px; transition: background 0.15s ease, color 0.15s ease; }
+  .nav-links a:hover { background: var(--bg); color: var(--text); }
+  .nav-links a.active { background: var(--accent-soft); color: var(--accent); }
+
+  .theme-toggle { background: none; border: 1px solid var(--border); color: var(--muted); width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; transition: background 0.15s ease, color 0.15s ease; }
+  .theme-toggle:hover { background: var(--bg); color: var(--text); }
+
+  main { max-width: 720px; margin: 0 auto; padding: 48px 56px 120px; }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 32px; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; box-shadow: 0 1px 2px var(--shadow); margin-bottom: 24px; }
+
+  .card-title { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .card-subtitle { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
+
+  label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 8px; }
+
+  input[type="text"] {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 14px;
+    font-size: 14px;
+    font-family: inherit;
+    margin-bottom: 16px;
+    background: var(--input-bg);
+    color: var(--text);
+  }
+  input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
+  .tag-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .tag { background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; gap: 6px; text-transform: capitalize; }
+  .tag button { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 14px; padding: 0; line-height: 1; }
+
+  .row { display: flex; gap: 10px; margin-bottom: 8px; }
+  .row input { margin-bottom: 0; }
+
+  .btn { border: none; font-size: 13px; font-weight: 600; padding: 10px 18px; border-radius: 10px; cursor: pointer; font-family: inherit; transition: background 0.15s ease, opacity 0.15s ease; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { opacity: 0.88; }
+  .btn-secondary { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--btn-secondary-hover); }
+
+  .file-label { display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; margin-top: 4px; }
+
+  .save-msg { font-size: 12px; color: var(--green-text); margin-top: 10px; height: 16px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">BGV</div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="review.html">Review</a>
+      <a href="history.html">History</a>
+      <a href="settings.html" class="active">Settings</a>
+    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+  </div>
+</nav>
+
+<main>
+  <div class="page-title">Settings</div>
+
+  <div class="card">
+    <div class="card-title">Required documents</div>
+    <div class="card-subtitle">Candidates must submit all of these to be marked as fully verified.</div>
+
+    <div class="tag-list" id="docTags"></div>
+
+    <div class="row">
+      <input type="text" id="newDocInput" placeholder="e.g. pan_card" onkeydown="if(event.key==='Enter'){event.preventDefault();addDoc();}">
+      <button class="btn btn-secondary" onclick="addDoc()">Add</button>
+    </div>
+
+    <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none">
+    <label class="file-label" for="excelInput" onclick="document.getElementById('excelInput').click()">Or upload an Excel file instead →</label>
+
+    <div style="margin-top: 16px;">
+      <button class="btn btn-primary" onclick="saveRequiredDocs()">Save required documents</button>
+    </div>
+    <div class="save-msg" id="docsSaveMsg"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Folder & file naming</div>
+    <div class="card-subtitle">Controls how candidate folders are named in Google Drive.</div>
+
+    <label>Destination folder name (top-level Drive folder)</label>
+    <input type="text" id="destFolderInput" placeholder="Candidate_Documents">
+
+    <label>Candidate folder name format</label>
+    <input type="text" id="folderFormatInput" placeholder="{candidate_id}-{name}-{date}">
+
+    <div style="margin-top: 8px;">
+      <button class="btn btn-primary" onclick="saveFolderConfig()">Save folder settings</button>
+    </div>
+    <div class="save-msg" id="folderSaveMsg"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Source Drive folder</div>
+    <div class="card-subtitle">If a candidate has no documents in Gmail, we'll check this folder for a file named after their email.</div>
+
+    <label>Source folder ID</label>
+    <input type="text" id="sourceDriveInput" placeholder="Paste Google Drive folder ID">
+
+    <div style="margin-top: 8px;">
+      <button class="btn btn-primary" onclick="saveSourceDrive()">Save source folder</button>
+    </div>
+    <div class="save-msg" id="sourceSaveMsg"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Gmail & Drive connection</div>
+    <div class="card-subtitle">If document fetching starts failing unexpectedly, reconnect your Google account here.</div>
+
+    <button class="btn btn-secondary" onclick="window.location.href='http://localhost:8000/api/auth/reconnect'">Reconnect Gmail & Drive</button>
+  </div>
+
+</main>
+
+<script>
+  const API_BASE = 'http://localhost:8000/api';
+  let requiredDocs = [];
+
+  function updateToggleIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('bgv-theme', next);
+    updateToggleIcon();
+  }
+
+  updateToggleIcon();
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? '✓' : '!';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-out');
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
+  }
+
+  function renderDocTags() {
+    const tagsEl = document.getElementById('docTags');
+    if (!requiredDocs.length) {
+      tagsEl.innerHTML = '<span style="font-size:13px;color:var(--muted)">No required documents set yet.</span>';
+      return;
+    }
+    tagsEl.innerHTML = requiredDocs.map((doc, i) => `
+      <span class="tag">${doc.replace(/_/g, ' ')}<button onclick="removeDoc(${i})">×</button></span>
+    `).join('');
+  }
+
+  function addDoc() {
+    const input = document.getElementById('newDocInput');
+    const val = input.value.trim().toLowerCase().replace(/\s+/g, '_');
+    if (val && !requiredDocs.includes(val)) {
+      requiredDocs.push(val);
+      renderDocTags();
+      input.value = '';
+    }
+  }
+
+  function removeDoc(index) {
+    requiredDocs.splice(index, 1);
+    renderDocTags();
+  }
+
+  async function saveRequiredDocs() {
+    try {
+      const res = await fetch(`${API_BASE}/settings/required-documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ required_documents: requiredDocs })
+      });
+      const data = await res.json();
+      const msg = document.getElementById('docsSaveMsg');
+      msg.textContent = 'Saved successfully.';
+      showToast('Settings saved.', 'success');
+      setTimeout(() => msg.textContent = '', 2500);
+    } catch (err) {
+      showToast('Could not save. Is the backend running?', 'error');
+    }
+  }
+
+  document.getElementById('excelInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/settings/required-documents/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      requiredDocs = data.required_documents || [];
+      renderDocTags();
+      const msg = document.getElementById('docsSaveMsg');
+      msg.textContent = 'Uploaded and saved.';
+      showToast('Settings saved.', 'success');
+      setTimeout(() => msg.textContent = '', 2500);
+    } catch (err) {
+      showToast('Upload failed.', 'error');
+    }
+  });
+
+  async function saveFolderConfig() {
+    const destFolder = document.getElementById('destFolderInput').value.trim();
+    const folderFormat = document.getElementById('folderFormatInput').value.trim();
+
+    try {
+      await fetch(`${API_BASE}/settings/folder-config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          folder_name_format: folderFormat,
+          destination_folder_name: destFolder
+        })
+      });
+      const msg = document.getElementById('folderSaveMsg');
+      msg.textContent = 'Saved successfully.';
+      showToast('Settings saved.', 'success');
+      setTimeout(() => msg.textContent = '', 2500);
+    } catch (err) {
+      showToast('Could not save. Is the backend running?', 'error');
+    }
+  }
+
+  async function saveSourceDrive() {
+    const folderId = document.getElementById('sourceDriveInput').value.trim();
+    try {
+      await fetch(`${API_BASE}/settings/source-drive`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_drive_folder_id: folderId })
+      });
+      const msg = document.getElementById('sourceSaveMsg');
+      msg.textContent = 'Saved successfully.';
+      showToast('Settings saved.', 'success');
+      setTimeout(() => msg.textContent = '', 2500);
+    } catch (err) {
+      showToast('Could not save. Is the backend running?', 'error');
+    }
+  }
+
+  async function loadSettings() {
+    try {
+      const res = await fetch(`${API_BASE}/settings`);
+      const data = await res.json();
+
+      requiredDocs = data.required_documents || [];
+      renderDocTags();
+
+      document.getElementById('destFolderInput').value = data.destination_folder_name || '';
+      document.getElementById('folderFormatInput').value = data.folder_name_format || '';
+      document.getElementById('sourceDriveInput').value = data.source_drive_folder_id || '';
+    } catch (err) {
+      console.error('Could not load settings:', err);
+    }
+  }
+
+  loadSettings();
+</script>
+<div class="toast-container" id="toastContainer"></div>
+</body>
+</html>

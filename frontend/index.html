@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BGV — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  // Apply saved theme BEFORE page renders, so there's no flash of wrong theme
+  (function() {
+    const saved = localStorage.getItem('bgv-theme') || 'light';
+    document.documentElement.setAttribute('data-theme', saved);
+  })();
+</script>
+<style>
+  :root[data-theme="light"] {
+    --bg: #FAFAFA;
+    --surface: #FFFFFF;
+    --border: #ECECEC;
+    --muted: #6B7280;
+    --text: #1A1A1A;
+    --accent: #2563EB;
+    --accent-soft: #EFF4FF;
+    --hover-row: #FAFBFC;
+    --shadow: rgba(0,0,0,0.03);
+
+    --green-bg: #DCFCE7; --green-text: #16A34A;
+    --amber-bg: #FEF3C7; --amber-text: #D97706;
+    --red-bg: #FEE2E2; --red-text: #DC2626;
+    --grey-bg: #F1F5F9; --grey-text: #64748B;
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0D0D0D;
+    --surface: #161616;
+    --border: #2A2A2A;
+    --muted: #8A8A8A;
+    --text: #EDEDED;
+    --accent: #C9A04D;
+    --accent-soft: #2A2316;
+    --hover-row: #1C1C1C;
+    --shadow: rgba(0,0,0,0.2);
+
+    --green-bg: #14291C; --green-text: #4ADE80;
+    --amber-bg: #2E2310; --amber-text: #F0B429;
+    --red-bg: #2E1417; --red-text: #F0506E;
+    --grey-bg: #1C1C1C; --grey-text: #8A8A8A;
+  }
+  /* ===== TOAST NOTIFICATION ===== */
+  .toast-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .toast {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: 0 4px 16px var(--shadow);
+    min-width: 240px;
+    max-width: 360px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: toast-in 0.25s ease;
+  }
+
+  .toast.success { border-left-color: #16A34A; }
+  .toast.error { border-left-color: #DC2626; }
+
+  .toast-icon { font-size: 14px; flex-shrink: 0; }
+
+  .toast.toast-out {
+    animation: toast-out 0.2s ease forwards;
+  }
+
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(8px); }
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 24px 56px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .logo {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  .nav-links {
+    display: flex;
+    gap: 8px;
+  }
+
+  .nav-links a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .nav-links a:hover {
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  .nav-links a.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+
+  .theme-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .theme-toggle:hover {
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 56px 120px;
+  }
+
+  .page-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 28px;
+  }
+
+  .stat-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 40px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 1px 2px var(--shadow);
+  }
+
+  .stat-card.hero {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .stat-number {
+    font-size: 40px;
+    font-weight: 600;
+    font-family: 'IBM Plex Mono', monospace;
+    line-height: 1;
+  }
+
+  .stat-card.hero .stat-number {
+    font-size: 56px;
+  }
+
+  .stat-label {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pill {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .pill.verified { background: var(--green-text); }
+  .pill.partial { background: var(--amber-text); }
+  .pill.failed { background: var(--red-text); }
+  .pill.pending { background: var(--grey-text); }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .upload-btn {
+    background: var(--accent);
+    border: none;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    font-family: inherit;
+  }
+
+  .upload-btn:hover {
+    opacity: 0.88;
+  }
+
+  .candidate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px var(--shadow);
+  }
+
+  .candidate-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 140px 90px 24px;
+    align-items: center;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: background 0.15s ease;
+    gap: 16px;
+  }
+
+  .candidate-row:last-child { border-bottom: none; }
+
+  .candidate-row:hover {
+    background: var(--hover-row);
+  }
+
+  .candidate-row:hover .arrow {
+    transform: translateX(4px);
+    color: var(--accent);
+  }
+
+  .candidate-id {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .candidate-name {
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .candidate-email {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 999px;
+    width: fit-content;
+  }
+
+  .status-pill.verified { background: var(--green-bg); color: var(--green-text); }
+  .status-pill.partial { background: var(--amber-bg); color: var(--amber-text); }
+  .status-pill.failed { background: var(--red-bg); color: var(--red-text); }
+  .status-pill.pending { background: var(--grey-bg); color: var(--grey-text); }
+
+  .doc-fingerprint {
+    display: flex;
+    gap: 4px;
+  }
+
+  .fp-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .fp-dot.filled { background: var(--accent); }
+  .fp-dot.empty { background: var(--border); }
+
+  .arrow {
+    color: var(--muted);
+    transition: transform 0.15s ease, color 0.15s ease;
+    font-size: 14px;
+  }
+
+  .empty-state, .loading-state {
+    padding: 56px 24px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 14px;
+  }
+
+  @media (max-width: 720px) {
+    nav { padding: 18px 24px; }
+    main { padding: 32px 24px 80px; }
+    .stat-grid { grid-template-columns: 1fr 1fr; }
+    .stat-card.hero { grid-column: 1 / -1; }
+    .candidate-row { grid-template-columns: 60px 1fr 90px 16px; }
+    .candidate-row .doc-fingerprint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">BGV</div>
+  <div class="nav-right">
+    <div class="nav-links">
+      <a href="index.html" class="active">Overview</a>
+      <a href="review.html">Review</a>
+      <a href="history.html">History</a>
+      <a href="settings.html">Settings</a>
+    </div>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+  </div>
+</nav>
+
+<main>
+  <div class="page-title">Overview</div>
+
+  <div class="stat-grid">
+    <div class="stat-card hero">
+      <div class="stat-number mono" id="totalCount">—</div>
+      <div class="stat-label">Total candidates</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="verifiedCount">—</div>
+      <div class="stat-label"><span class="pill verified"></span>Verified</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="partialCount">—</div>
+      <div class="stat-label"><span class="pill partial"></span>Partial</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" id="failedCount">—</div>
+      <div class="stat-label"><span class="pill failed"></span>Failed</div>
+    </div>
+  </div>
+
+  <div class="section-header">
+    <div class="section-title">Candidates</div>
+    <button class="upload-btn" onclick="document.getElementById('fileInput').click()">Upload Excel</button>
+    <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
+  </div>
+
+  <div class="candidate-card">
+    <div id="candidateList">
+      <div class="loading-state">Loading candidates…</div>
+    </div>
+  </div>
+</main>
+
+<script>
+  const API_BASE = 'http://localhost:8000/api';
+
+  function updateToggleIcon() {
+    const theme = document.documentElement.getAttribute('data-theme');
+    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  }
+
+  function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('bgv-theme', next);
+    updateToggleIcon();
+  }
+
+  updateToggleIcon();
+
+  function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    const icon = type === 'success' ? '✓' : '!';
+    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    setTimeout(() => {
+      toast.classList.add('toast-out');
+      setTimeout(() => toast.remove(), 200);
+    }, 3000);
+  }
+
+  async function loadDashboard() {
+    try {
+      const res = await fetch(`${API_BASE}/candidates/dashboard`);
+      const data = await res.json();
+
+      document.getElementById('totalCount').textContent = data.total_candidates ?? 0;
+      document.getElementById('verifiedCount').textContent = data.fully_verified ?? 0;
+      document.getElementById('partialCount').textContent = data.partial_documents ?? 0;
+      document.getElementById('failedCount').textContent = data.missing_documents ?? 0;
+    } catch (err) {
+      console.error('Dashboard load failed:', err);
+    }
+  }
+
+  function statusClass(status) {
+    if (status === 'completed') return 'verified';
+    if (status === 'partial') return 'partial';
+    if (status === 'failed') return 'failed';
+    return 'pending';
+  }
+
+  function statusLabel(status) {
+    if (status === 'completed') return 'Verified';
+    if (status === 'partial') return 'Partial';
+    if (status === 'failed') return 'Failed';
+    return 'Pending';
+  }
+
+  function fingerprint(received, required) {
+    const total = Math.max(required, 1);
+    const filled = Math.min(received, total);
+
+    let dots = '';
+    for (let i = 0; i < total; i++) {
+      dots += `<span class="fp-dot ${i < filled ? 'filled' : 'empty'}"></span>`;
+    }
+    return `<div class="doc-fingerprint">${dots}</div>`;
+  }
+
+  async function loadCandidates() {
+    const listEl = document.getElementById('candidateList');
+    try {
+      const res = await fetch(`${API_BASE}/candidates`);
+      const data = await res.json();
+      const candidates = data.candidates || data || [];
+
+      if (!candidates.length) {
+        listEl.innerHTML = '<div class="empty-state">No candidates yet. Upload an Excel file to get started.</div>';
+        return;
+      }
+
+      listEl.innerHTML = candidates.map(c => `
+        <div class="candidate-row" onclick="window.location.href='candidate.html?id=${c.candidate_id}'">
+          <div class="candidate-id mono">${c.candidate_id}</div>
+          <div>
+            <div class="candidate-name">${c.name}</div>
+            <div class="candidate-email">${c.email}</div>
+          </div>
+          <div class="status-pill ${statusClass(c.status)}">
+            ${statusLabel(c.status)}
+          </div>
+          ${fingerprint(c.docs_received, c.docs_required)}
+          <div class="arrow">→</div>
+        </div>
+      `).join('');
+    } catch (err) {
+      listEl.innerHTML = '<div class="empty-state">Could not load candidates. Is the backend running?</div>';
+      console.error('Candidates load failed:', err);
+    }
+  }
+
+  document.getElementById('fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const res = await fetch(`${API_BASE}/candidates/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json();
+      showToast(`Uploaded ${data.total_candidates || 0} candidates successfully.`, 'success');
+      loadDashboard();
+      loadCandidates();
+    } catch (err) {
+      showToast('Upload failed. Check console for details.', 'error');
+      console.error(err);
+    }
+  });
+
+  loadDashboard();
+  loadCandidates();
+</script>
+<div class="toast-container" id="toastContainer"></div>
+</body>
+</html>
