@@ -82,3 +82,18 @@ frontend/
   history.html                batch history
   settings.html               settings
 ```
+## Running it
+
+This project isn't deployed publicly (needs a database, OAuth credentials, and OCR system dependencies not supported by simple hosting) — run it locally:
+
+```bash
+# backend
+cd backend
+uvicorn main:app --reload
+
+# frontend
+cd frontend
+# open index.html directly, or serve with Live Server
+```
+
+You'll need a `.env` file with your PostgreSQL connection string, Google OAuth credentials, and Groq API key.
