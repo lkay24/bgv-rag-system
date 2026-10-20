@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BGV — Candidate Detail</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%232563EB%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2716%27 font-family=%27sans-serif%27 font-weight=%27700%27 text-anchor=%27middle%27 fill=%27white%27%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   (function() {
-    const saved = localStorage.getItem('bgv-theme') || 'light';
+    let saved = 'light'; try { saved = localStorage.getItem('bgv-theme') || 'light'; } catch (e) {}
     document.documentElement.setAttribute('data-theme', saved);
   })();
 </script>
@@ -150,6 +151,15 @@
     .doc-row { grid-template-columns: 1fr 80px; }
     .doc-row .doc-confidence, .doc-row .doc-link { display: none; }
   }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav-links a, .theme-toggle { white-space: nowrap; }
+  @media (max-width: 720px) {
+    nav { flex-wrap: wrap; gap: 12px; }
+    .nav-right { width: 100%; justify-content: space-between; }
+    .nav-links { gap: 2px; overflow-x: auto; }
+    .nav-links a { padding: 8px 10px; }
+  }
 </style>
 </head>
 <body>
@@ -163,7 +173,7 @@
       <a href="history.html">History</a>
       <a href="settings.html">Settings</a>
     </div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </div>
 </nav>
 
@@ -175,109 +185,35 @@
   </div>
 </main>
 
+<script src="common.js"></script>
 <script>
-  const API_BASE = 'http://localhost:8000/api';
+  const candidateId = new URLSearchParams(window.location.search).get('id');
 
-  function updateToggleIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
-  }
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('bgv-theme', next);
-    updateToggleIcon();
-  }
-
-  updateToggleIcon();
-
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    const icon = type === 'success' ? '✓' : '!';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 200);
-    }, 3000);
-  }
-
-  const params = new URLSearchParams(window.location.search);
-  const candidateId = params.get('id');
-
-  function statusClass(status) {
-    if (status === 'completed') return 'verified';
-    if (status === 'partial') return 'partial';
-    if (status === 'failed') return 'failed';
-    return 'pending';
-  }
-
-  function statusLabel(status) {
-    if (status === 'completed') return 'Verified';
-    if (status === 'partial') return 'Partial';
-    if (status === 'failed') return 'Failed';
-    return 'Pending';
-  }
-
-  function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-  }
-
-  async function processCandidate() {
-    const btn = document.getElementById('processBtn');
+  async function runPipeline(btnId, path, busyLabel, idleLabel) {
+    const btn = document.getElementById(btnId);
     btn.disabled = true;
-    btn.textContent = 'Processing…';
-
+    btn.textContent = busyLabel;
     try {
-      const res = await fetch(`${API_BASE}/candidates/${candidateId}/process?admin_email=lotusbazaz@gmail.com`, {
-        method: 'POST'
-      });
-      const data = await res.json();
+      const data = await api(path, { method: 'POST' });
       if (data.success) {
-        loadCandidate();
+        const uploaded = (data.documents_processed || []).filter(d => d.status === 'uploaded').length;
+        showToast(data.note || `Done — ${uploaded} document${uploaded === 1 ? '' : 's'} filed.`, 'success');
       } else {
         showToast(data.error || 'Processing failed', 'error');
-        btn.disabled = false;
-        btn.textContent = 'Process candidate';
       }
+      loadCandidate();
     } catch (err) {
-      showToast('Could not reach the server.', 'error');
-      console.error(err);
+      showToast(err.message, 'error');
       btn.disabled = false;
-      btn.textContent = 'Process candidate';
+      btn.textContent = idleLabel;
     }
   }
 
-  async function retryCandidate() {
-    const btn = document.getElementById('retryBtn');
-    btn.disabled = true;
-    btn.textContent = 'Retrying…';
+  const processCandidate = () => runPipeline('processBtn', `/candidates/${encodeURIComponent(candidateId)}/process`, 'Processing… this can take a minute', 'Process candidate');
+  const retryCandidate = () => runPipeline('retryBtn', `/candidates/${encodeURIComponent(candidateId)}/retry`, 'Retrying… this can take a minute', 'Retry verification');
 
-    try {
-      const res = await fetch(`${API_BASE}/candidates/${candidateId}/retry?admin_email=lotusbazaz@gmail.com`, {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (data.success) {
-        loadCandidate();
-      } else {
-        showToast(data.detail || data.error || 'Retry failed', 'error');
-        btn.disabled = false;
-        btn.textContent = 'Retry verification';
-      }
-    } catch (err) {
-      showToast('Could not reach the server.', 'error');
-      console.error(err);
-      btn.disabled = false;
-      btn.textContent = 'Retry verification';
-    }
+  function docLabel(value) {
+    return esc(String(value).replace(/_/g, ' '));
   }
 
   async function loadCandidate() {
@@ -289,20 +225,18 @@
     }
 
     try {
-      const res = await fetch(`${API_BASE}/candidates/${candidateId}/detail`);
-      if (!res.ok) throw new Error('Not found');
-      const c = await res.json();
+      const c = await api(`/candidates/${encodeURIComponent(candidateId)}/detail`);
 
       const docsHtml = c.documents.length
         ? c.documents.map(doc => `
             <div class="doc-row">
               <div>
-                <div class="doc-type">${doc.doc_type.replace(/_/g, ' ')}</div>
-                <div class="doc-category">${doc.category}</div>
+                <div class="doc-type">${docLabel(doc.doc_type)}</div>
+                <div class="doc-category">${docLabel(doc.category)}</div>
               </div>
-              <div class="doc-confidence">${doc.confidence} confidence</div>
-              <div class="doc-status-pill">${doc.status}</div>
-              <a class="doc-link" href="https://drive.google.com/file/d/${doc.drive_file_id}/view" target="_blank">View →</a>
+              <div class="doc-confidence">${esc(doc.confidence)} confidence</div>
+              <div class="doc-status-pill">${esc(doc.status)}</div>
+              <a class="doc-link" href="https://drive.google.com/file/d/${encodeURIComponent(doc.drive_file_id)}/view" target="_blank" rel="noopener noreferrer">View →</a>
             </div>
           `).join('')
         : '<div class="empty-state">No documents received yet.</div>';
@@ -310,24 +244,32 @@
       const missingHtml = c.missing_documents.length
         ? c.missing_documents.map(doc => `
             <div class="missing-row">
-              <span class="missing-dot"></span>${doc.replace(/_/g, ' ')}
+              <span class="missing-dot"></span>${docLabel(doc)}
             </div>
           `).join('')
-        : '<div class="empty-state">All required documents received.</div>';
+        : `<div class="empty-state">${c.required_documents.length ? 'All required documents received.' : 'No required documents configured — set them in Settings.'}</div>`;
 
-      const actionBtn = c.status === 'failed'
-        ? `<button id="retryBtn" class="btn btn-primary" onclick="retryCandidate()">Retry verification</button>`
-        : `<button id="processBtn" class="btn btn-secondary" onclick="processCandidate()">Re-check documents</button>`;
+      let actionBtn;
+      if (c.status === 'processing') {
+        actionBtn = '<button class="btn btn-secondary" disabled>Processing…</button>';
+      } else if (c.status === 'failed') {
+        actionBtn = '<button id="retryBtn" class="btn btn-primary" onclick="retryCandidate()">Retry verification</button>';
+      } else if (c.status === 'pending') {
+        actionBtn = '<button id="processBtn" class="btn btn-primary" onclick="processCandidate()">Process candidate</button>';
+      } else {
+        actionBtn = '<button id="processBtn" class="btn btn-secondary" onclick="processCandidate()">Re-check documents</button>';
+      }
 
+      document.title = `BGV — ${c.name}`;
       contentEl.innerHTML = `
         <div class="header-card">
           <div class="header-top">
             <div>
-              <div class="candidate-id-tag mono">${c.candidate_id}</div>
-              <div class="candidate-name">${c.name}</div>
+              <div class="candidate-id-tag mono">${esc(c.candidate_id)}</div>
+              <div class="candidate-name">${esc(c.name)}</div>
               <div class="candidate-meta">
-                ${c.email}<br>
-                ${c.phone || 'No phone on file'} · Added ${formatDate(c.created_at)}
+                ${esc(c.email)}<br>
+                ${esc(c.phone) || 'No phone on file'} · Added ${formatDate(c.created_at)}
               </div>
             </div>
             <div class="status-pill ${statusClass(c.status)}">${statusLabel(c.status)}</div>
@@ -344,13 +286,11 @@
         <div class="card">${missingHtml}</div>
       `;
     } catch (err) {
-      contentEl.innerHTML = '<div class="empty-state">Could not load this candidate. Is the backend running?</div>';
-      console.error('Candidate load failed:', err);
+      contentEl.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
     }
   }
 
   loadCandidate();
 </script>
-<div class="toast-container" id="toastContainer"></div>
 </body>
 </html>
