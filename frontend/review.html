@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BGV — Review Queue</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%232563EB%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2716%27 font-family=%27sans-serif%27 font-weight=%27700%27 text-anchor=%27middle%27 fill=%27white%27%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   (function() {
-    const saved = localStorage.getItem('bgv-theme') || 'light';
+    let saved = 'light'; try { saved = localStorage.getItem('bgv-theme') || 'light'; } catch (e) {}
     document.documentElement.setAttribute('data-theme', saved);
   })();
 </script>
@@ -100,6 +101,8 @@
   .row:last-child { border-bottom: none; }
 
   .cand-id { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--muted); }
+  .cand-link { color: inherit; text-decoration: none; }
+  .cand-link:hover .cand-name { color: var(--accent); }
   .cand-name { font-size: 15px; font-weight: 600; }
   .cand-email { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
@@ -115,6 +118,15 @@
     .row { grid-template-columns: 1fr 100px; }
     .row .cand-id { display: none; }
   }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav-links a, .theme-toggle { white-space: nowrap; }
+  @media (max-width: 720px) {
+    nav { flex-wrap: wrap; gap: 12px; }
+    .nav-right { width: 100%; justify-content: space-between; }
+    .nav-links { gap: 2px; overflow-x: auto; }
+    .nav-links a { padding: 8px 10px; }
+  }
 </style>
 </head>
 <body>
@@ -128,7 +140,7 @@
       <a href="history.html">History</a>
       <a href="settings.html">Settings</a>
     </div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </div>
 </nav>
 
@@ -141,56 +153,23 @@
   </div>
 </main>
 
+<script src="common.js"></script>
 <script>
-  const API_BASE = 'http://localhost:8000/api';
-
-  function updateToggleIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
-  }
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('bgv-theme', next);
-    updateToggleIcon();
-  }
-
-  updateToggleIcon();
-
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    const icon = type === 'success' ? '✓' : '!';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 200);
-    }, 3000);
-  }
-
   async function retry(candidateId, btn) {
     btn.disabled = true;
     btn.textContent = 'Retrying…';
     try {
-      const res = await fetch(`${API_BASE}/candidates/${candidateId}/retry?admin_email=lotusbazaz@gmail.com`, {
-        method: 'POST'
-      });
-      const data = await res.json();
+      const data = await api(`/candidates/${encodeURIComponent(candidateId)}/retry`, { method: 'POST' });
       if (data.success) {
-        showToast(`Retried ${candidateId} — status: ${data.status}`, 'success');
+        showToast(`Retried ${candidateId} — status: ${statusLabel(data.status)}`, 'success');
         loadQueue();
       } else {
-        showToast(data.detail || data.error || 'Retry failed', 'error');
+        showToast(data.error || 'Retry failed', 'error');
         btn.disabled = false;
         btn.textContent = 'Retry';
       }
     } catch (err) {
-      showToast('Could not reach the server.', 'error');
+      showToast(err.message, 'error');
       btn.disabled = false;
       btn.textContent = 'Retry';
     }
@@ -199,33 +178,37 @@
   async function loadQueue() {
     const listEl = document.getElementById('queueList');
     try {
-      const res = await fetch(`${API_BASE}/candidates/review-queue`);
-      const data = await res.json();
+      const data = await api('/candidates/review-queue');
       const candidates = data.candidates || [];
 
       if (!candidates.length) {
-        listEl.innerHTML = '<div class="empty-state">Nothing to review. All candidates are verified or partial.</div>';
+        listEl.innerHTML = '<div class="empty-state">Nothing to review. All candidates are verified, partial or still pending.</div>';
         return;
       }
 
       listEl.innerHTML = candidates.map(c => `
         <div class="row">
-          <div class="cand-id mono">${c.candidate_id}</div>
+          <div class="cand-id mono">${esc(c.candidate_id)}</div>
           <div>
-            <div class="cand-name">${c.name}</div>
-            <div class="cand-email">${c.email}</div>
+            <a class="cand-link" href="candidate.html?id=${encodeURIComponent(c.candidate_id)}">
+              <div class="cand-name">${esc(c.name)}</div>
+            </a>
+            <div class="cand-email">${esc(c.email)}</div>
           </div>
-          <button class="retry-btn" onclick="retry('${c.candidate_id}', this)">Retry</button>
+          <button class="retry-btn" data-id="${esc(c.candidate_id)}">Retry</button>
         </div>
       `).join('');
     } catch (err) {
-      listEl.innerHTML = '<div class="empty-state">Could not load review queue. Is the backend running?</div>';
-      console.error(err);
+      listEl.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
     }
   }
 
+  document.getElementById('queueList').addEventListener('click', e => {
+    const btn = e.target.closest('.retry-btn');
+    if (btn) retry(btn.dataset.id, btn);
+  });
+
   loadQueue();
 </script>
-<div class="toast-container" id="toastContainer"></div>
 </body>
 </html>

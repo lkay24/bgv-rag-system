@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BGV — History</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%232563EB%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2716%27 font-family=%27sans-serif%27 font-weight=%27700%27 text-anchor=%27middle%27 fill=%27white%27%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   (function() {
-    const saved = localStorage.getItem('bgv-theme') || 'light';
+    let saved = 'light'; try { saved = localStorage.getItem('bgv-theme') || 'light'; } catch (e) {}
     document.documentElement.setAttribute('data-theme', saved);
   })();
 </script>
@@ -122,12 +123,26 @@
   .dot.partial { background: var(--amber-text); }
   .dot.failed { background: var(--red-text); }
   .dot.pending { background: var(--grey-text); }
+  .row-actions { display: flex; align-items: center; gap: 10px; }
+  .btn-sm { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .btn-sm:disabled { opacity: 0.5; cursor: not-allowed; }
+  .progress { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 12px; }
+  .progress > div { height: 100%; background: var(--accent); transition: width 0.4s ease; }
 
   .empty-state, .loading-state { padding: 56px 24px; text-align: center; color: var(--muted); font-size: 14px; }
 
   @media (max-width: 640px) {
     nav { padding: 18px 24px; }
     main { padding: 32px 24px 80px; }
+  }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav-links a, .theme-toggle { white-space: nowrap; }
+  @media (max-width: 720px) {
+    nav { flex-wrap: wrap; gap: 12px; }
+    .nav-right { width: 100%; justify-content: space-between; }
+    .nav-links { gap: 2px; overflow-x: auto; }
+    .nav-links a { padding: 8px 10px; }
   }
 </style>
 </head>
@@ -142,7 +157,7 @@
       <a href="history.html" class="active">History</a>
       <a href="settings.html">Settings</a>
     </div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </div>
 </nav>
 
@@ -154,50 +169,61 @@
   </div>
 </main>
 
+<script src="common.js"></script>
 <script>
-  const API_BASE = 'http://localhost:8000/api';
+  let timer = null;
 
-  function updateToggleIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
+  async function processBatch(batchId, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Starting…';
+    try {
+      await api(`/candidates/batch/${batchId}/process`, { method: 'POST' });
+      showToast(`Batch #${batchId} started.`, 'success');
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+    loadHistory();
   }
 
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('bgv-theme', next);
-    updateToggleIcon();
-  }
+  function batchRow(b) {
+    const s = b.status_breakdown;
+    const total = s.pending + s.processing + s.completed + s.partial + s.failed;
+    const done = s.completed + s.partial + s.failed;
+    const running = b.processing_status === 'processing';
+    const action = running
+      ? ''
+      : (s.pending > 0 ? `<button class="btn-sm" data-batch="${b.batch_id}">${b.processing_status === 'not_started' ? 'Process' : 'Resume'} (${s.pending})</button>` : '');
+    const bar = running && total
+      ? `<div class="progress" aria-label="Progress"><div style="width:${Math.round(done / total * 100)}%"></div></div>`
+      : '';
 
-  updateToggleIcon();
-
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    const icon = type === 'success' ? '✓' : '!';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 200);
-    }, 3000);
-  }
-
-  function formatDate(dateStr) {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr);
-    return d.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) +
-           ' · ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    return `
+      <div class="batch-row">
+        <div class="batch-top">
+          <div>
+            <div class="batch-filename">${esc(b.filename)}</div>
+            <div class="batch-meta">Batch #${b.batch_id} · ${b.total_candidates} candidates · ${formatDate(b.created_at, true)}</div>
+          </div>
+          <div class="row-actions">
+            ${action}
+            <div class="batch-status-pill ${esc(b.processing_status)}">${esc(b.processing_status.replace('_', ' '))}</div>
+          </div>
+        </div>
+        <div class="breakdown">
+          <div class="breakdown-item"><span class="dot completed"></span>${s.completed} verified</div>
+          <div class="breakdown-item"><span class="dot partial"></span>${s.partial} partial</div>
+          <div class="breakdown-item"><span class="dot failed"></span>${s.failed} failed</div>
+          <div class="breakdown-item"><span class="dot pending"></span>${s.pending + s.processing} pending</div>
+        </div>
+        ${bar}
+      </div>`;
   }
 
   async function loadHistory() {
+    clearTimeout(timer);
     const listEl = document.getElementById('historyList');
     try {
-      const res = await fetch(`${API_BASE}/batches`);
-      const data = await res.json();
+      const data = await api('/batches');
       const batches = data.batches || [];
 
       if (!batches.length) {
@@ -205,31 +231,23 @@
         return;
       }
 
-      listEl.innerHTML = batches.map(b => `
-        <div class="batch-row">
-          <div class="batch-top">
-            <div>
-              <div class="batch-filename">${b.filename}</div>
-              <div class="batch-meta">Batch #${b.batch_id} · ${b.total_candidates} candidates · ${formatDate(b.created_at)}</div>
-            </div>
-            <div class="batch-status-pill ${b.processing_status}">${b.processing_status.replace('_', ' ')}</div>
-          </div>
-          <div class="breakdown">
-            <div class="breakdown-item"><span class="dot completed"></span>${b.status_breakdown.completed} verified</div>
-            <div class="breakdown-item"><span class="dot partial"></span>${b.status_breakdown.partial} partial</div>
-            <div class="breakdown-item"><span class="dot failed"></span>${b.status_breakdown.failed} failed</div>
-            <div class="breakdown-item"><span class="dot pending"></span>${b.status_breakdown.pending} pending</div>
-          </div>
-        </div>
-      `).join('');
+      listEl.innerHTML = batches.map(batchRow).join('');
+
+      // Live-update while anything is running.
+      if (batches.some(b => b.processing_status === 'processing')) {
+        timer = setTimeout(loadHistory, 3000);
+      }
     } catch (err) {
-      listEl.innerHTML = '<div class="empty-state">Could not load history. Is the backend running?</div>';
-      console.error(err);
+      listEl.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
     }
   }
 
+  document.getElementById('historyList').addEventListener('click', e => {
+    const btn = e.target.closest('[data-batch]');
+    if (btn) processBatch(btn.dataset.batch, btn);
+  });
+
   loadHistory();
 </script>
-<div class="toast-container" id="toastContainer"></div>
 </body>
 </html>

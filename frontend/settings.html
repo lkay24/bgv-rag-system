@@ -4,11 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BGV — Settings</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%232563EB%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2716%27 font-family=%27sans-serif%27 font-weight=%27700%27 text-anchor=%27middle%27 fill=%27white%27%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   (function() {
-    const saved = localStorage.getItem('bgv-theme') || 'light';
+    let saved = 'light'; try { saved = localStorage.getItem('bgv-theme') || 'light'; } catch (e) {}
     document.documentElement.setAttribute('data-theme', saved);
   })();
 </script>
@@ -132,7 +133,21 @@
 
   .file-label { display: inline-block; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; margin-top: 4px; }
 
+  .hint { font-size: 12px; color: var(--muted); margin: -4px 0 12px; line-height: 1.5; }
+  .hint code { font-family: 'IBM Plex Mono', monospace; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .conn-status { font-size: 13px; margin-bottom: 14px; color: var(--muted); }
+  .conn-status strong { color: var(--text); }
+  .save-msg.error { color: var(--red-text); }
   .save-msg { font-size: 12px; color: var(--green-text); margin-top: 10px; height: 16px; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav-links a, .theme-toggle { white-space: nowrap; }
+  @media (max-width: 720px) {
+    nav { flex-wrap: wrap; gap: 12px; }
+    .nav-right { width: 100%; justify-content: space-between; }
+    .nav-links { gap: 2px; overflow-x: auto; }
+    .nav-links a { padding: 8px 10px; }
+  }
 </style>
 </head>
 <body>
@@ -146,7 +161,7 @@
       <a href="history.html">History</a>
       <a href="settings.html" class="active">Settings</a>
     </div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </div>
 </nav>
 
@@ -160,10 +175,11 @@
     <div class="tag-list" id="docTags"></div>
 
     <div class="row">
-      <input type="text" id="newDocInput" placeholder="e.g. pan_card" onkeydown="if(event.key==='Enter'){event.preventDefault();addDoc();}">
+      <input type="text" id="newDocInput" list="docTypeList" placeholder="e.g. pan_card" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addDoc();}">
       <button class="btn btn-secondary" onclick="addDoc()">Add</button>
     </div>
 
+    <datalist id="docTypeList"></datalist>
     <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none">
     <label class="file-label" for="excelInput" onclick="document.getElementById('excelInput').click()">Or upload an Excel file instead →</label>
 
@@ -182,6 +198,7 @@
 
     <label>Candidate folder name format</label>
     <input type="text" id="folderFormatInput" placeholder="{candidate_id}-{name}-{date}">
+    <div class="hint">Placeholders: <code>{candidate_id}</code> (required), <code>{name}</code>, <code>{date}</code>. Applies to candidates processed from now on; existing folders are not renamed.</div>
 
     <div style="margin-top: 8px;">
       <button class="btn btn-primary" onclick="saveFolderConfig()">Save folder settings</button>
@@ -206,42 +223,22 @@
     <div class="card-title">Gmail & Drive connection</div>
     <div class="card-subtitle">If document fetching starts failing unexpectedly, reconnect your Google account here.</div>
 
-    <button class="btn btn-secondary" onclick="window.location.href='http://localhost:8000/api/auth/reconnect'">Reconnect Gmail & Drive</button>
+    <div class="conn-status" id="connStatus">Checking connection…</div>
+    <button class="btn btn-secondary" id="connectBtn">Connect Gmail &amp; Drive</button>
   </div>
 
 </main>
 
+<script src="common.js"></script>
 <script>
-  const API_BASE = 'http://localhost:8000/api';
   let requiredDocs = [];
 
-  function updateToggleIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
-  }
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('bgv-theme', next);
-    updateToggleIcon();
-  }
-
-  updateToggleIcon();
-
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    const icon = type === 'success' ? '✓' : '!';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 200);
-    }, 3000);
+  function flash(id, text, isError = false) {
+    const msg = document.getElementById(id);
+    msg.textContent = text;
+    msg.classList.toggle('error', isError);
+    clearTimeout(msg._t);
+    msg._t = setTimeout(() => { msg.textContent = ''; }, isError ? 6000 : 2500);
   }
 
   function renderDocTags() {
@@ -251,9 +248,14 @@
       return;
     }
     tagsEl.innerHTML = requiredDocs.map((doc, i) => `
-      <span class="tag">${doc.replace(/_/g, ' ')}<button onclick="removeDoc(${i})">×</button></span>
+      <span class="tag">${esc(doc.replace(/_/g, ' '))}<button type="button" data-index="${i}" aria-label="Remove ${esc(doc)}">×</button></span>
     `).join('');
   }
+
+  document.getElementById('docTags').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-index]');
+    if (btn) { requiredDocs.splice(Number(btn.dataset.index), 1); renderDocTags(); }
+  });
 
   function addDoc() {
     const input = document.getElementById('newDocInput');
@@ -261,98 +263,69 @@
     if (val && !requiredDocs.includes(val)) {
       requiredDocs.push(val);
       renderDocTags();
-      input.value = '';
     }
-  }
-
-  function removeDoc(index) {
-    requiredDocs.splice(index, 1);
-    renderDocTags();
+    input.value = '';
   }
 
   async function saveRequiredDocs() {
     try {
-      const res = await fetch(`${API_BASE}/settings/required-documents`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ required_documents: requiredDocs })
-      });
-      const data = await res.json();
-      const msg = document.getElementById('docsSaveMsg');
-      msg.textContent = 'Saved successfully.';
-      showToast('Settings saved.', 'success');
-      setTimeout(() => msg.textContent = '', 2500);
+      const data = await postJson('/settings/required-documents', { required_documents: requiredDocs });
+      requiredDocs = data.required_documents;
+      renderDocTags();
+      flash('docsSaveMsg', 'Saved successfully.');
+      showToast('Required documents saved.', 'success');
     } catch (err) {
-      showToast('Could not save. Is the backend running?', 'error');
+      flash('docsSaveMsg', err.message, true);
+      showToast(err.message, 'error');
     }
   }
 
   document.getElementById('excelInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files[0];
     if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const res = await fetch(`${API_BASE}/settings/required-documents/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
+      const data = await postFile('/settings/required-documents/upload', file);
       requiredDocs = data.required_documents || [];
       renderDocTags();
-      const msg = document.getElementById('docsSaveMsg');
-      msg.textContent = 'Uploaded and saved.';
-      showToast('Settings saved.', 'success');
-      setTimeout(() => msg.textContent = '', 2500);
+      flash('docsSaveMsg', 'Uploaded and saved.');
+      showToast('Required documents saved.', 'success');
     } catch (err) {
-      showToast('Upload failed.', 'error');
+      flash('docsSaveMsg', err.message, true);
+      showToast(err.message, 'error');
+    } finally {
+      input.value = '';
     }
   });
 
   async function saveFolderConfig() {
-    const destFolder = document.getElementById('destFolderInput').value.trim();
-    const folderFormat = document.getElementById('folderFormatInput').value.trim();
-
     try {
-      await fetch(`${API_BASE}/settings/folder-config`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folder_name_format: folderFormat,
-          destination_folder_name: destFolder
-        })
+      const data = await postJson('/settings/folder-config', {
+        folder_name_format: document.getElementById('folderFormatInput').value.trim(),
+        destination_folder_name: document.getElementById('destFolderInput').value.trim()
       });
-      const msg = document.getElementById('folderSaveMsg');
-      msg.textContent = 'Saved successfully.';
-      showToast('Settings saved.', 'success');
-      setTimeout(() => msg.textContent = '', 2500);
+      flash('folderSaveMsg', 'Saved successfully.');
+      showToast(data.message, 'success');
     } catch (err) {
-      showToast('Could not save. Is the backend running?', 'error');
+      flash('folderSaveMsg', err.message, true);
+      showToast(err.message, 'error');
     }
   }
 
   async function saveSourceDrive() {
-    const folderId = document.getElementById('sourceDriveInput').value.trim();
     try {
-      await fetch(`${API_BASE}/settings/source-drive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_drive_folder_id: folderId })
-      });
-      const msg = document.getElementById('sourceSaveMsg');
-      msg.textContent = 'Saved successfully.';
-      showToast('Settings saved.', 'success');
-      setTimeout(() => msg.textContent = '', 2500);
+      await postJson('/settings/source-drive', { source_drive_folder_id: document.getElementById('sourceDriveInput').value.trim() });
+      flash('sourceSaveMsg', 'Saved successfully.');
+      showToast('Source folder saved.', 'success');
     } catch (err) {
-      showToast('Could not save. Is the backend running?', 'error');
+      flash('sourceSaveMsg', err.message, true);
+      showToast(err.message, 'error');
     }
   }
 
   async function loadSettings() {
     try {
-      const res = await fetch(`${API_BASE}/settings`);
-      const data = await res.json();
+      const data = await api('/settings');
 
       requiredDocs = data.required_documents || [];
       renderDocTags();
@@ -361,12 +334,50 @@
       document.getElementById('folderFormatInput').value = data.folder_name_format || '';
       document.getElementById('sourceDriveInput').value = data.source_drive_folder_id || '';
     } catch (err) {
-      console.error('Could not load settings:', err);
+      showToast(err.message, 'error');
     }
   }
 
+  async function loadDocTypes() {
+    try {
+      const types = await api('/settings/document-types');
+      const unique = [...new Set(Object.values(types).flat())].sort();
+      document.getElementById('docTypeList').innerHTML = unique.map(t => `<option value="${esc(t)}"></option>`).join('');
+    } catch (err) { console.error(err); }
+  }
+
+  async function loadConnection() {
+    const statusEl = document.getElementById('connStatus');
+    const btn = document.getElementById('connectBtn');
+    try {
+      const a = await api('/auth/status');
+      if (a.connected) {
+        statusEl.innerHTML = `Connected as <strong>${esc(a.email)}</strong>`;
+        btn.textContent = 'Reconnect Gmail & Drive';
+      } else {
+        statusEl.textContent = 'Not connected. Connect a Google account to fetch documents from Gmail and file them in Drive.';
+        btn.textContent = 'Connect Gmail & Drive';
+      }
+    } catch (err) {
+      statusEl.textContent = err.message;
+    }
+  }
+
+  document.getElementById('connectBtn').addEventListener('click', () => {
+    window.location.href = `${API_BASE}/auth/reconnect`;
+  });
+
+  // Back from Google's consent screen.
+  (function handleAuthRedirect() {
+    const q = new URLSearchParams(window.location.search);
+    if (q.get('connected')) showToast(`Connected as ${q.get('connected')}`, 'success');
+    if (q.get('auth_error')) showToast(`Google login failed: ${q.get('auth_error')}`, 'error');
+    if (q.get('connected') || q.get('auth_error')) history.replaceState(null, '', 'settings.html');
+  })();
+
   loadSettings();
+  loadDocTypes();
+  loadConnection();
 </script>
-<div class="toast-container" id="toastContainer"></div>
 </body>
 </html>

@@ -4,12 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>BGV — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%232563EB%27/%3E%3Ctext x=%2716%27 y=%2722%27 font-size=%2716%27 font-family=%27sans-serif%27 font-weight=%27700%27 text-anchor=%27middle%27 fill=%27white%27%3EB%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script>
   // Apply saved theme BEFORE page renders, so there's no flash of wrong theme
   (function() {
-    const saved = localStorage.getItem('bgv-theme') || 'light';
+    let saved = 'light'; try { saved = localStorage.getItem('bgv-theme') || 'light'; } catch (e) {}
     document.documentElement.setAttribute('data-theme', saved);
   })();
 </script>
@@ -263,7 +264,7 @@
     font-family: inherit;
   }
 
-  .upload-btn:hover {
+  .upload-btn:hover:not(:disabled) {
     opacity: 0.88;
   }
 
@@ -350,6 +351,23 @@
     font-size: 14px;
   }
 
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .toolbar input[type="search"] { flex: 1 1 220px; min-width: 0; background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-family: inherit; }
+  .toolbar input[type="search"]:focus { outline: none; border-color: var(--accent); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 999px; padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; }
+  .chip:hover { color: var(--text); }
+  .chip.active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+  .banner { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 12px; padding: 16px 20px; margin-bottom: 20px; font-size: 13px; display: none; }
+  .banner.show { display: block; }
+  .banner-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .banner .muted { color: var(--muted); margin-top: 4px; }
+  .progress { height: 6px; background: var(--border); border-radius: 999px; overflow: hidden; margin-top: 12px; }
+  .progress > div { height: 100%; background: var(--accent); width: 0; transition: width 0.4s ease; }
+  .upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .candidate-row:focus-visible { outline-offset: -2px; }
+
   .empty-state, .loading-state {
     padding: 56px 24px;
     text-align: center;
@@ -365,6 +383,15 @@
     .candidate-row { grid-template-columns: 60px 1fr 90px 16px; }
     .candidate-row .doc-fingerprint { display: none; }
   }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .nav-links a, .theme-toggle { white-space: nowrap; }
+  @media (max-width: 720px) {
+    nav { flex-wrap: wrap; gap: 12px; }
+    .nav-right { width: 100%; justify-content: space-between; }
+    .nav-links { gap: 2px; overflow-x: auto; }
+    .nav-links a { padding: 8px 10px; }
+  }
 </style>
 </head>
 <body>
@@ -378,7 +405,7 @@
       <a href="history.html">History</a>
       <a href="settings.html">Settings</a>
     </div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()">🌙</button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle theme">🌙</button>
   </div>
 </nav>
 
@@ -410,6 +437,19 @@
     <input type="file" id="fileInput" accept=".xlsx,.xls" style="display:none">
   </div>
 
+  <div class="banner" id="banner" role="status"></div>
+
+  <div class="toolbar">
+    <input type="search" id="searchInput" placeholder="Search by name, email or ID" aria-label="Search candidates">
+    <div class="chips" id="chips">
+      <button class="chip active" data-status="">All</button>
+      <button class="chip" data-status="completed">Verified</button>
+      <button class="chip" data-status="partial">Partial</button>
+      <button class="chip" data-status="failed">Failed</button>
+      <button class="chip" data-status="pending">Pending</button>
+    </div>
+  </div>
+
   <div class="candidate-card">
     <div id="candidateList">
       <div class="loading-state">Loading candidates…</div>
@@ -417,43 +457,15 @@
   </div>
 </main>
 
+<script src="common.js"></script>
 <script>
-  const API_BASE = 'http://localhost:8000/api';
-
-  function updateToggleIcon() {
-    const theme = document.documentElement.getAttribute('data-theme');
-    document.getElementById('themeToggle').textContent = theme === 'dark' ? '☀️' : '🌙';
-  }
-
-  function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', next);
-    localStorage.setItem('bgv-theme', next);
-    updateToggleIcon();
-  }
-
-  updateToggleIcon();
-
-  function showToast(message, type = 'success') {
-    const container = document.getElementById('toastContainer');
-    const toast = document.createElement('div');
-    toast.className = `toast ${type}`;
-    const icon = type === 'success' ? '✓' : '!';
-    toast.innerHTML = `<span class="toast-icon">${icon}</span><span>${message}</span>`;
-    container.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.add('toast-out');
-      setTimeout(() => toast.remove(), 200);
-    }, 3000);
-  }
+  let allCandidates = [];
+  let activeStatus = '';
+  let stopWatching = null;
 
   async function loadDashboard() {
     try {
-      const res = await fetch(`${API_BASE}/candidates/dashboard`);
-      const data = await res.json();
-
+      const data = await api('/candidates/dashboard');
       document.getElementById('totalCount').textContent = data.total_candidates ?? 0;
       document.getElementById('verifiedCount').textContent = data.fully_verified ?? 0;
       document.getElementById('partialCount').textContent = data.partial_documents ?? 0;
@@ -463,88 +475,160 @@
     }
   }
 
-  function statusClass(status) {
-    if (status === 'completed') return 'verified';
-    if (status === 'partial') return 'partial';
-    if (status === 'failed') return 'failed';
-    return 'pending';
-  }
-
-  function statusLabel(status) {
-    if (status === 'completed') return 'Verified';
-    if (status === 'partial') return 'Partial';
-    if (status === 'failed') return 'Failed';
-    return 'Pending';
-  }
-
   function fingerprint(received, required) {
-    const total = Math.max(required, 1);
-    const filled = Math.min(received, total);
-
+    if (!required) return `<div class="doc-fingerprint" title="No required documents configured">${received} doc${received === 1 ? '' : 's'}</div>`;
+    const filled = Math.min(received, required);
     let dots = '';
-    for (let i = 0; i < total; i++) {
+    for (let i = 0; i < required; i++) {
       dots += `<span class="fp-dot ${i < filled ? 'filled' : 'empty'}"></span>`;
     }
-    return `<div class="doc-fingerprint">${dots}</div>`;
+    return `<div class="doc-fingerprint" title="${filled} of ${required} required documents">${dots}</div>`;
+  }
+
+  function renderCandidates() {
+    const listEl = document.getElementById('candidateList');
+    const q = document.getElementById('searchInput').value.trim().toLowerCase();
+
+    const shown = allCandidates.filter(c =>
+      (!activeStatus || (activeStatus === 'pending' ? ['pending', 'processing'].includes(c.status) : c.status === activeStatus)) &&
+      (!q || [c.candidate_id, c.name, c.email].some(v => String(v).toLowerCase().includes(q)))
+    );
+
+    if (!allCandidates.length) {
+      listEl.innerHTML = '<div class="empty-state">No candidates yet. Upload an Excel file to get started.</div>';
+    } else if (!shown.length) {
+      listEl.innerHTML = '<div class="empty-state">No candidates match your search.</div>';
+    } else {
+      listEl.innerHTML = shown.map(c => `
+        <div class="candidate-row" role="link" tabindex="0" data-id="${esc(c.candidate_id)}">
+          <div class="candidate-id mono">${esc(c.candidate_id)}</div>
+          <div>
+            <div class="candidate-name">${esc(c.name)}</div>
+            <div class="candidate-email">${esc(c.email)}</div>
+          </div>
+          <div class="status-pill ${statusClass(c.status)}">${statusLabel(c.status)}</div>
+          ${fingerprint(c.docs_received, c.docs_required)}
+          <div class="arrow">→</div>
+        </div>
+      `).join('');
+    }
   }
 
   async function loadCandidates() {
     const listEl = document.getElementById('candidateList');
     try {
-      const res = await fetch(`${API_BASE}/candidates`);
-      const data = await res.json();
-      const candidates = data.candidates || data || [];
-
-      if (!candidates.length) {
-        listEl.innerHTML = '<div class="empty-state">No candidates yet. Upload an Excel file to get started.</div>';
-        return;
-      }
-
-      listEl.innerHTML = candidates.map(c => `
-        <div class="candidate-row" onclick="window.location.href='candidate.html?id=${c.candidate_id}'">
-          <div class="candidate-id mono">${c.candidate_id}</div>
-          <div>
-            <div class="candidate-name">${c.name}</div>
-            <div class="candidate-email">${c.email}</div>
-          </div>
-          <div class="status-pill ${statusClass(c.status)}">
-            ${statusLabel(c.status)}
-          </div>
-          ${fingerprint(c.docs_received, c.docs_required)}
-          <div class="arrow">→</div>
-        </div>
-      `).join('');
+      const data = await api('/candidates');
+      allCandidates = data.candidates || [];
+      renderCandidates();
     } catch (err) {
-      listEl.innerHTML = '<div class="empty-state">Could not load candidates. Is the backend running?</div>';
-      console.error('Candidates load failed:', err);
+      listEl.innerHTML = `<div class="empty-state">${esc(err.message)}</div>`;
     }
   }
 
+  function openCandidate(row) {
+    window.location.href = `candidate.html?id=${encodeURIComponent(row.dataset.id)}`;
+  }
+
+  document.getElementById('candidateList').addEventListener('click', e => {
+    const row = e.target.closest('.candidate-row');
+    if (row) openCandidate(row);
+  });
+  document.getElementById('candidateList').addEventListener('keydown', e => {
+    const row = e.target.closest('.candidate-row');
+    if (row && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openCandidate(row); }
+  });
+
+  document.getElementById('searchInput').addEventListener('input', renderCandidates);
+  document.getElementById('chips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    activeStatus = chip.dataset.status;
+    document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c === chip));
+    renderCandidates();
+  });
+
+  // ----- batch banner: offer to process a fresh upload, and show live progress -----
+  const banner = document.getElementById('banner');
+
+  function showReady(batchId, message) {
+    banner.innerHTML = `
+      <div class="banner-row">
+        <div>${message}</div>
+        <button class="upload-btn" id="processBatchBtn">Process batch #${batchId}</button>
+      </div>`;
+    banner.classList.add('show');
+    document.getElementById('processBatchBtn').addEventListener('click', () => startBatch(batchId));
+  }
+
+  function showProgress(s) {
+    const failedNote = s.status_breakdown.failed ? ` · ${s.status_breakdown.failed} failed` : '';
+    banner.innerHTML = `
+      <div class="banner-row"><div><strong>Processing batch #${s.batch_id}</strong> — ${esc(s.filename)}
+        <div class="muted">${s.finished_count} of ${s.total_candidates} candidates done${failedNote}</div></div>
+        <div class="mono">${s.progress_percent}%</div></div>
+      <div class="progress"><div style="width:${s.progress_percent}%"></div></div>`;
+    banner.classList.add('show');
+  }
+
+  function followBatch(batchId) {
+    if (stopWatching) stopWatching();
+    stopWatching = watchBatch(batchId, s => { showProgress(s); loadDashboard(); loadCandidates(); }, s => {
+      const ok = s.processing_status === 'completed';
+      showToast(ok ? `Batch #${batchId} finished.` : `Batch #${batchId} stopped early — check the Settings connection, then process it again.`, ok ? 'success' : 'error');
+      if (!ok) {
+        showReady(batchId, `Batch #${batchId} stopped before finishing (${s.status_breakdown.pending} candidates still pending).`);
+      } else {
+        banner.classList.remove('show');
+      }
+      loadDashboard(); loadCandidates();
+    });
+  }
+
+  async function startBatch(batchId) {
+    const btn = document.getElementById('processBatchBtn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+    try {
+      await api(`/candidates/batch/${batchId}/process`, { method: 'POST' });
+      followBatch(batchId);
+    } catch (err) {
+      showToast(err.message, 'error');
+      if (btn) { btn.disabled = false; btn.textContent = `Process batch #${batchId}`; }
+    }
+  }
+
+  // Pick up a batch that is already running (e.g. after a refresh).
+  async function resumeRunningBatch() {
+    try {
+      const { batches } = await api('/batches');
+      const running = batches.find(b => b.processing_status === 'processing');
+      if (running) followBatch(running.batch_id);
+    } catch (err) { console.error(err); }
+  }
+
   document.getElementById('fileInput').addEventListener('change', async (e) => {
-    const file = e.target.files[0];
+    const input = e.target;
+    const file = input.files[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const res = await fetch(`${API_BASE}/candidates/upload`, {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json();
-      showToast(`Uploaded ${data.total_candidates || 0} candidates successfully.`, 'success');
+      const data = await postFile('/candidates/upload', file);
+      let msg = `Added ${data.candidates_added} candidate${data.candidates_added === 1 ? '' : 's'}`;
+      if (data.candidates_skipped) msg += `, skipped ${data.candidates_skipped} duplicate${data.candidates_skipped === 1 ? '' : 's'}`;
+      if (data.invalid_count) msg += `, ${data.invalid_count} invalid row${data.invalid_count === 1 ? '' : 's'} ignored (first: row ${data.invalid_rows[0].row} – ${data.invalid_rows[0].reason})`;
+      showToast(msg + '.', data.invalid_count ? 'error' : 'success');
+      showReady(data.batch_id, `<strong>${esc(data.filename)}</strong> uploaded — ${data.candidates_added} candidates ready to verify.`);
       loadDashboard();
       loadCandidates();
     } catch (err) {
-      showToast('Upload failed. Check console for details.', 'error');
-      console.error(err);
+      showToast(err.message, 'error');
+    } finally {
+      input.value = '';   // allow re-selecting the same file
     }
   });
 
   loadDashboard();
   loadCandidates();
+  resumeRunningBatch();
 </script>
-<div class="toast-container" id="toastContainer"></div>
 </body>
 </html>

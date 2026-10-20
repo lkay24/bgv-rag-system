@@ -1,41 +1,22 @@
-import os
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
+import io
+import string
+import re
 from datetime import datetime
+
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from sqlalchemy.orm import Session
-from backend import models
+
+from backend.services.file_utils import drive_escape
+from backend.services.google_auth import get_credentials
+from backend.taxonomy import CATEGORIES
+
+DEFAULT_FOLDER_FORMAT = '{candidate_id}-{name}-{date}'
+FOLDER_FORMAT_FIELDS = ('candidate_id', 'name', 'date')
 
 
 def get_drive_service(user_email: str, db: Session):
-    user = db.query(models.User).filter(
-        models.User.email == user_email
-    ).first()
-
-    if not user:
-        raise Exception(f"User {user_email} not found")
-
-    if not user.access_token:
-        raise Exception(f"No access token for {user_email}")
-
-    creds = Credentials(
-        token=user.access_token,
-        refresh_token=user.refresh_token,
-        client_id=os.getenv("GOOGLE_CLIENT_ID"),
-        client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-        token_uri="https://oauth2.googleapis.com/token"
-    )
-
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-        user.access_token = creds.token
-        db.commit()
-        print(f"✅ Drive token refreshed for {user_email}")
-
-    service = build('drive', 'v3', credentials=creds)
-
-    return service
+    return build('drive', 'v3', credentials=get_credentials(user_email, db), cache_discovery=False)
 
 
 def create_folder(service, folder_name: str, parent_id: str = None) -> str:
@@ -58,10 +39,10 @@ def create_folder(service, folder_name: str, parent_id: str = None) -> str:
 
 
 def find_folder(service, folder_name: str, parent_id: str = None) -> str:
-    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    query = f"name='{drive_escape(folder_name)}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
 
     if parent_id:
-        query += f" and '{parent_id}' in parents"
+        query += f" and '{drive_escape(parent_id)}' in parents"
 
     results = service.files().list(
         q=query,
@@ -86,45 +67,69 @@ def get_or_create_folder(service, folder_name: str, parent_id: str = None) -> st
     return create_folder(service, folder_name, parent_id)
 
 
+def validate_folder_format(folder_format: str) -> str:
+    """Return an error message if the format can't produce unique folder names, else ''."""
+    fmt = (folder_format or '').strip()
+    if not fmt:
+        return 'Folder name format cannot be empty.'
+    try:
+        fields = {name for _, name, _, _ in string.Formatter().parse(fmt) if name}
+    except ValueError as e:
+        return f'Invalid folder name format: {e}'
+    unknown = fields - set(FOLDER_FORMAT_FIELDS)
+    if unknown:
+        allowed = ', '.join('{' + f + '}' for f in FOLDER_FORMAT_FIELDS)
+        return f"Unknown placeholder(s) {sorted(unknown)}. Allowed: {allowed}."
+    if 'candidate_id' not in fields:
+        return 'Folder name format must include {candidate_id} so every candidate gets a unique folder.'
+    return ''
+
+
+def build_candidate_folder_name(
+    folder_format: str,
+    candidate_id: str,
+    candidate_name: str,
+    today: datetime = None
+) -> str:
+    """Render the configured candidate folder name, falling back to the default format."""
+    if validate_folder_format(folder_format):
+        folder_format = DEFAULT_FOLDER_FORMAT
+
+    today = today or datetime.now()
+    name = re.sub(r'\s+', '_', (candidate_name or '').strip())
+    rendered = folder_format.strip().format(
+        candidate_id=candidate_id,
+        name=name,
+        date=today.strftime('%Y-%m-%d')
+    )
+    # '/' would read as a path separator in Drive listings.
+    return rendered.replace('/', '-').strip() or str(candidate_id)
+
+
 def create_candidate_folder_structure(
     service,
     candidate_id: str,
     candidate_name: str,
-    parent_folder_id: str
+    parent_folder_id: str,
+    folder_format: str = DEFAULT_FOLDER_FORMAT
 ) -> dict:
-    clean_name = candidate_name.split()[0].lower()
-
-    categories = [
-        'Identity',
-        'Address',
-        'Education',
-        'Employment',
-        'Financial',
-        'Professional',
-        'Compliance',
-        'Photo_Personal',
-        'International'
-    ]
+    """<parent>/<candidate folder>/<Category>/ ... using the configured folder name format."""
+    candidate_folder_name = build_candidate_folder_name(folder_format, candidate_id, candidate_name)
+    candidate_folder_id = get_or_create_folder(service, candidate_folder_name, parent_folder_id)
 
     category_folder_ids = {}
     category_folder_names = {}
 
-    for category in categories:
-        folder_name = f"{candidate_id}_{clean_name}_{category.lower()}"
+    for category in CATEGORIES:
+        display_name = category.title()
+        category_folder_ids[category] = get_or_create_folder(service, display_name, candidate_folder_id)
+        category_folder_names[category] = f"{candidate_folder_name}/{display_name}"
 
-        folder_id = get_or_create_folder(
-            service,
-            folder_name,
-            parent_folder_id
-        )
-
-        category_folder_ids[category.lower()] = folder_id
-        category_folder_names[category.lower()] = folder_name
-
-    print(f"✅ Created folder structure for {candidate_id}_{clean_name}")
+    print(f"✅ Created folder structure for {candidate_folder_name}")
 
     return {
-        'candidate_folder_name': f"{candidate_id}_{clean_name}",
+        'candidate_folder_name': candidate_folder_name,
+        'candidate_folder_id': candidate_folder_id,
         'category_folders': category_folder_ids,
         'category_folder_names': category_folder_names
     }
@@ -171,37 +176,37 @@ def get_main_bgv_folder(service, folder_name: str = 'Candidate_Documents') -> st
     return folder_id
 
 
-def find_candidate_pdf_in_source_drive(
+def find_candidate_files_in_source_drive(
     service,
     candidate_email: str,
-    source_folder_id: str
-) -> str:
+    source_folder_id: str,
+    limit: int = 20
+) -> list:
+    """File ids of every PDF in the source folder whose name contains the candidate's email."""
     query = (
-        f"'{source_folder_id}' in parents "
-        f"and (name contains '{candidate_email}') "
+        f"'{drive_escape(source_folder_id)}' in parents "
+        f"and name contains '{drive_escape(candidate_email)}' "
         f"and mimeType='application/pdf' "
         f"and trashed=false"
     )
 
     results = service.files().list(
         q=query,
-        fields='files(id, name)'
+        fields='files(id, name)',
+        pageSize=limit
     ).execute()
 
     files = results.get('files', [])
 
     if files:
-        print(f"✅ Found source document for {candidate_email}: {files[0]['name']}")
-        return files[0]['id']
+        print(f"✅ Found {len(files)} source document(s) for {candidate_email}")
+    else:
+        print(f"❌ No source document found for {candidate_email} in source folder")
 
-    print(f"❌ No source document found for {candidate_email} in source folder")
-    return None
+    return [f['id'] for f in files]
 
 
 def download_file_from_drive(service, file_id: str, save_path: str) -> str:
-    from googleapiclient.http import MediaIoBaseDownload
-    import io
-
     request = service.files().get_media(fileId=file_id)
 
     file_data = io.BytesIO()
