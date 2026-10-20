@@ -1,14 +1,18 @@
 
-import pandas as pd
 import io
-from fastapi import UploadFile, File
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from datetime import datetime
 from typing import List
 
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from backend.config import MAX_UPLOAD_BYTES
 from backend.database import get_db
 from backend import models
+from backend.services.drive_service import DEFAULT_FOLDER_FORMAT, validate_folder_format
+from backend.taxonomy import ALL_DOC_TYPES, DOCUMENT_TYPES, normalize_doc_type
 
 router = APIRouter()
 
@@ -23,6 +27,27 @@ class FolderConfigUpdate(BaseModel):
     folder_name_format: str
     destination_folder_name: str
 
+
+
+def clean_required_documents(values) -> list:
+    """Normalise, de-duplicate and validate a required-documents list."""
+    cleaned = []
+    for value in values:
+        doc_type = normalize_doc_type(value)
+        if doc_type and doc_type not in cleaned:
+            cleaned.append(doc_type)
+
+    unknown = [d for d in cleaned if d not in ALL_DOC_TYPES]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown document type(s): {', '.join(unknown)}. "
+                "The classifier can only recognise the types listed under /settings/document-types, "
+                "so a candidate could never satisfy these."
+            )
+        )
+    return cleaned
 
 
 def get_setting_value(db: Session, key: str, default=None):
@@ -42,8 +67,8 @@ def set_setting_value(db: Session, key: str, value):
     
     if setting:
         setting.value = value
+        setting.updated_at = datetime.utcnow()
     else:
-        
         setting = models.Settings(key=key, value=value)
         db.add(setting)
     
@@ -56,7 +81,7 @@ def set_setting_value(db: Session, key: str, value):
 def get_all_settings(db: Session = Depends(get_db)):
     
     required_docs = get_setting_value(db, 'required_documents', [])
-    folder_format = get_setting_value(db, 'folder_name_format', '{candidate_id}-{name}-{date}')
+    folder_format = get_setting_value(db, 'folder_name_format', DEFAULT_FOLDER_FORMAT)
     destination_folder = get_setting_value(db, 'destination_folder_name', 'Candidate_Documents')
     source_drive_folder_id = get_setting_value(db, 'source_drive_folder_id', None)
     
@@ -74,11 +99,12 @@ def update_required_documents(
     data: RequiredDocsUpdate,
     db: Session = Depends(get_db)
 ):
-    set_setting_value(db, 'required_documents', data.required_documents)
-    
+    required = clean_required_documents(data.required_documents)
+    set_setting_value(db, 'required_documents', required)
+
     return {
         "message": "Required documents updated successfully",
-        "required_documents": data.required_documents
+        "required_documents": required
     }
 
 
@@ -88,64 +114,29 @@ def update_folder_config(
     data: FolderConfigUpdate,
     db: Session = Depends(get_db)
 ):
-    set_setting_value(db, 'folder_name_format', data.folder_name_format)
-    set_setting_value(db, 'destination_folder_name', data.destination_folder_name)
-    
+    folder_format = data.folder_name_format.strip()
+    destination = data.destination_folder_name.strip()
+
+    error = validate_folder_format(folder_format)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+    if not destination:
+        raise HTTPException(status_code=400, detail="Destination folder name cannot be empty.")
+
+    set_setting_value(db, 'folder_name_format', folder_format)
+    set_setting_value(db, 'destination_folder_name', destination)
+
     return {
-        "message": "Folder configuration updated successfully",
-        "folder_name_format": data.folder_name_format,
-        "destination_folder_name": data.destination_folder_name
+        "message": "Folder configuration updated successfully. It applies to candidates processed from now on.",
+        "folder_name_format": folder_format,
+        "destination_folder_name": destination
     }
 
 
 @router.get("/settings/document-types")
 def get_document_types():
-    
-    
-    return {
-        "identity": [
-            "aadhar_card", "pan_card", "passport", 
-            "driving_license", "voter_id"
-        ],
-        "address": [
-            "aadhar_card", "passport", "electricity_bill", 
-            "water_bill", "gas_bill", "bank_statement", 
-            "rental_agreement", "telephone_bill"
-        ],
-        "education": [
-            "10th_marksheet", "10th_certificate", "12th_marksheet",
-            "12th_certificate", "degree_certificate", 
-            "provisional_certificate", "semester_marksheet",
-            "consolidated_marksheet", "college_id_card", "pg_degree"
-        ],
-        "employment": [
-            "offer_letter", "appointment_letter", "experience_letter",
-            "relieving_letter", "promotion_letter", "salary_revision_letter",
-            "payslip", "form_16", "employee_id_card", "joining_letter"
-        ],
-        "financial": [
-            "pan_card", "form_16", "itr", "salary_slip", 
-            "bank_statement", "cancelled_cheque"
-        ],
-        "photo_personal": [
-            "photograph", "signature", "resume", "biodata"
-        ],
-        "professional": [
-            "aws_certificate", "azure_certificate", "pmp_certificate",
-            "google_cloud_certificate", "skill_certificate"
-        ],
-        "compliance": [
-            "nda", "non_compete_agreement", "background_consent",
-            "police_verification", "drug_test"
-        ],
-        "international": [
-            "visa", "work_permit", "immigration_document", 
-            "overseas_certificate"
-        ],
-        "criminal": [
-            "police_verification_certificate", "criminal_background_check"
-        ]
-    }
+    return DOCUMENT_TYPES
+
 
 class SourceDriveUpdate(BaseModel):
     source_drive_folder_id: str
@@ -153,35 +144,45 @@ class SourceDriveUpdate(BaseModel):
 
 @router.post("/settings/source-drive")
 def update_source_drive(data: SourceDriveUpdate, db: Session = Depends(get_db)):
-    set_setting_value(db, 'source_drive_folder_id', data.source_drive_folder_id)
-    
+    folder_id = data.source_drive_folder_id.strip()
+    set_setting_value(db, 'source_drive_folder_id', folder_id or None)
+
     return {
         "message": "Source Drive folder updated successfully",
-        "source_drive_folder_id": data.source_drive_folder_id
+        "source_drive_folder_id": folder_id or None
     }
 
 
 @router.post("/settings/required-documents/upload")
-async def upload_required_documents_excel(
+def upload_required_documents_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    if not file.filename.endswith(('.xlsx', '.xls')):
+    if not (file.filename or '').lower().endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Please upload an Excel file (.xlsx or .xls)")
-    
-    contents = await file.read()
-    df = pd.read_excel(io.BytesIO(contents))
-    
-    
-    if 'doc_type' in df.columns:
-        doc_list = df['doc_type'].dropna().astype(str).str.strip().tolist()
-    else:
-        
-        doc_list = df.iloc[:, 0].dropna().astype(str).str.strip().tolist()
-    
-    set_setting_value(db, 'required_documents', doc_list)
-    
+
+    contents = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(contents) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=400, detail="File is too large.")
+
+    try:
+        df = pd.read_excel(io.BytesIO(contents), dtype=str)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Could not read that file as an Excel workbook.")
+
+    if df.empty and not len(df.columns):
+        raise HTTPException(status_code=400, detail="The Excel file is empty.")
+
+    column = df['doc_type'] if 'doc_type' in df.columns else df.iloc[:, 0]
+    values = column.dropna().astype(str).tolist()
+    # A headerless sheet would have its first document swallowed as the column header.
+    if 'doc_type' not in df.columns and normalize_doc_type(df.columns[0]) in ALL_DOC_TYPES:
+        values.insert(0, str(df.columns[0]))
+    required = clean_required_documents(values)
+
+    set_setting_value(db, 'required_documents', required)
+
     return {
         "message": "Required documents list uploaded successfully",
-        "required_documents": doc_list
+        "required_documents": required
     }

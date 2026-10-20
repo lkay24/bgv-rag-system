@@ -29,7 +29,7 @@ If the tool can't read a document properly in the first place, nothing it says a
 
 ## Other stuff that broke
 
-- **Combined PDFs silently lost documents.** First version treated every PDF as exactly one document, so a file with Aadhar front + back + PAN stitched together just got classified as whatever the model guessed for the whole thing — the other two documents vanished. Fixed by splitting multi-page PDFs into individual pages, classifying each one separately, then merging consecutive same-type pages back into one file before upload.
+- **Combined PDFs silently lost documents.** First version treated every PDF as exactly one document, so a file with Aadhar front + back + PAN stitched together just got classified as whatever the model guessed for the whole thing — the other two documents vanished. Fixed by splitting multi-page PDFs into individual pages, classifying each one separately, then merging same-type pages back into one file before upload.
 - **Batch processing used to just hang.** The API request wouldn't return until every candidate in the batch was done — fine for 5 candidates, useless for 200. Moved it to FastAPI background tasks with a separate status endpoint HR can poll, even after refreshing the page.
 - **Resent documents.** Someone sends a blurry Aadhar, then a clearer one later. If the new one classifies with higher confidence than what's on file, it replaces the old one and deletes it from Drive. Otherwise it's treated as a duplicate and skipped.
 - **Settings that existed but weren't wired up.** Went back over my own requirements doc partway through and found the folder-naming setting was being saved but never actually used by the upload logic, and there was no manual reconnect flow for expired Google tokens. Re-checking against the original spec instead of just plowing forward caught both.
@@ -61,39 +61,61 @@ Went through the original requirements doc again at the end and confirmed everyt
 
 ```
 backend/
-  main.py                    entry point, wires up routes
+  main.py                    entry point, wires up routes, serves the frontend
+  config.py                  env-driven settings (URLs, CORS, temp dir)
+  taxonomy.py                the one list of document categories/types (classifier, settings, Drive folders)
   database.py                SQLAlchemy connection/session setup
   models.py                  Batch, Candidate, Document, Settings, User tables
   api/
-    auth.py                  Google OAuth flow + manual reconnect
+    auth.py                  Google OAuth flow (CSRF state), connection status, manual reconnect
     candidates.py            upload, processing, dashboard, review, history
-    settings.py               required docs, folder naming, source folder
+    settings.py              required docs, folder naming, source folder
   services/
-    gmail_service.py         auth'd Gmail client, attachment search/download
+    google_auth.py           shared Google credential refresh for Gmail + Drive
+    gmail_service.py         attachment search/download (PDFs + images)
     drive_service.py         folder creation, uploads, replace/delete
+    file_utils.py            filename sanitising, image -> PDF, Drive query escaping
   agents/
     classifier.py            text extraction (+ OCR), LLM classification, page split/merge
     pipeline.py              the actual end-to-end flow per candidate, and the batch loop
 
-frontend/
-  index.html                 dashboard
+frontend/                    plain HTML/CSS/JS, shared helpers in common.js
+  index.html                 dashboard (search, filter, upload, process batch + live progress)
   candidate.html             candidate detail
   review.html                review queue
-  history.html                batch history
-  settings.html               settings
+  history.html               batch history (process / resume, live progress)
+  settings.html              settings + Google connection
+
+tests/                       pytest suite (SQLite, no network; OCR tests need tesseract)
 ```
+
+Drive layout for each candidate: `<destination folder>/<candidate folder named by your format>/<Category>/<doc_type>.pdf`.
+
 ## Running it
 
-This project isn't deployed publicly (needs a database, OAuth credentials, and OCR system dependencies not supported by simple hosting) — run it locally:
+This project isn't deployed publicly (needs a database, OAuth credentials, and OCR system dependencies not supported by simple hosting) — run it locally.
+
+System dependencies: PostgreSQL, Tesseract with the Hindi pack (`apt install tesseract-ocr tesseract-ocr-hin`, or the equivalent on your OS).
 
 ```bash
-# backend
-cd backend
-uvicorn main:app --reload
+pip install -r requirements.txt
+cp .env.example .env        # then fill in DATABASE_URL, GROQ_API_KEY, GOOGLE_CLIENT_ID/SECRET
 
-# frontend
-cd frontend
-# open index.html directly, or serve with Live Server
+# run from the repository root (not from backend/)
+uvicorn backend.main:app --reload
 ```
 
-You'll need a `.env` file with your PostgreSQL connection string, Google OAuth credentials, and Groq API key.
+Open http://localhost:8000 — the API serves the UI. Then:
+
+1. **Settings → Connect Gmail & Drive** (the Google OAuth client needs `http://localhost:8000/api/auth/callback` as an authorised redirect URI)
+2. Set the required documents
+3. **Overview → Upload Excel** (columns: `candidateId, name, email, phone`), then **Process batch**
+
+Tests: `pip install -r requirements-dev.txt && pytest`
+
+## Known limits
+
+- The API has no login of its own: anyone who can reach the port can read candidate data and trigger processing. Keep it on localhost / a trusted network, or put it behind a reverse proxy with authentication.
+- Google tokens are stored in the database in plain text.
+- Background processing runs inside the API process; run a single worker (`uvicorn` default).
+- If the same document type arrives in separate emails (e.g. Aadhaar front in one, back in another), the later one is treated as a duplicate of the first.
